@@ -3,6 +3,7 @@
 import * as vscode from 'vscode';
 import { Range, Position } from 'vscode';
 import { setFlagsFromString } from 'v8';
+import { Dir } from 'fs';
 
 interface IHash<T> {
     [details: string] : T;
@@ -68,33 +69,51 @@ async function moveSelByArgument(editor: vscode.TextEditor, args: MoveByArgs,
 
     // find range of brackets
     editor.selection = sel;
-    await vscode.commands.executeCommand('editor.action.selectToBracket');
-    let range = new vscode.Range(editor.selection.start,editor.selection.end);
-    // use language-sensitive brackets
+
     let pos = new vscode.Position(sel.active.line,sel.active.character);
+    let brackets = bracketsFor(editor.document,Direction.Forward);
+    let separator = /(,|;)/g;
+
+// TODO: if we're right after a bracket, this will
+    // select that inner range, rather than the outer range
+    // we need to shift the cursor first, in this case,
+    let endbracket = bracketsFor(editor.document,Direction.Backward);
+    let charbefore =
+        editor.document.getText(new Range(pos.translate(0,-1),pos));
+    let range: vscode.Range;
+    if(endbracket.test(charbefore)){
+        let next = pos.translate(0,1)
+        editor.selection = new vscode.Selection(next,next);
+        await vscode.commands.executeCommand('editor.action.selectToBracket');
+        range = new vscode.Range(editor.selection.start,editor.selection.end);
+    }else{
+        await vscode.commands.executeCommand('editor.action.selectToBracket');
+        range = new vscode.Range(editor.selection.start,editor.selection.end);
+    }
+    // use language-sensitive brackets
     if(args.value > 0){
-        let brackets = bracketsFor(editor.document,Direction.Forward);
-        let separator = /(,|;)/g;
         let count = 0;
 
         let end = editor.document.lineAt(pos).range.end;
+        if(end.isAfter(range.end)){ end = range.end; }
         let text = editor.document.getText(new Range(pos,end));
 
         let firstBracket = brackets.exec(text);
         let firstSeparator = separator.exec(text);
         let offset = pos.character;
 
-        while(count < args.value && pos.isBefore(range.end)){
+        while(count < args.value && pos.isBefore(range.end.translate(0,-1))){
 
             if(firstSeparator === null ||
                 firstSeparator.index === undefined){
                 if(pos.line < range.end.line){
                     pos = new Position(pos.line+1,0);
                     end = editor.document.lineAt(pos).range.end;
+                    if(end.isAfter(range.end)){ end = range.end; }
                     text = editor.document.getText(new Range(pos,end));
                     brackets.lastIndex = 0;
                     separator.lastIndex = 0;
-                    offset = 0;
+                    offset = pos.character;
 
                     firstSeparator = separator.exec(text);
                     firstBracket = brackets.exec(text);
@@ -116,29 +135,30 @@ async function moveSelByArgument(editor: vscode.TextEditor, args: MoveByArgs,
                 let at = new Position(pos.line,offset + firstBracket.index);
                 editor.selection = new vscode.Selection(at,at);
                 let cmdval = await vscode.commands.executeCommand('editor.action.jumpToBracket');
-                firstBracket = separator.exec(text);
-                pos = editor.selection.active;
+                firstBracket = brackets.exec(text);
                 if(editor.selection.active.line > pos.line){
                     pos = editor.selection.active;
                     end = editor.document.lineAt(pos).range.end;
+                    if(end.isAfter(range.end)){ end = range.end; }
                     text = editor.document.getText(new Range(pos,end));
                     brackets.lastIndex = 0;
                     separator.lastIndex = 0;
-                    offset = 0;
+                    offset = pos.character;
 
                     firstSeparator = separator.exec(text);
                     firstBracket = brackets.exec(text);
                 }else{
                     pos = editor.selection.active;
-                    while(firstSeparator !== null &&
-                          firstSeparator.index+offset < pos.character){
-                        firstSeparator = separator.exec(text);
-                    }
-                    while(firstBracket !== null &&
-                        firstBracket.index+offset < pos.character){
-                      firstBracket = brackets.exec(text);
-                    }
-              }
+                }
+                while(firstSeparator !== null &&
+                      firstSeparator.index+offset < pos.character){
+                    firstSeparator = separator.exec(text);
+                }
+                while(firstBracket !== null &&
+                      firstBracket.index+offset < pos.character){
+                    firstBracket = brackets.exec(text);
+                }
+
             }
         }
         return new vscode.Selection(pos,pos);
