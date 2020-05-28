@@ -64,6 +64,51 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(disposable);
 }
 
+async function findSurroundingBracketRange(editor: vscode.TextEditor,
+    pos: vscode.Position){
+
+    // if we're right after a bracket, this will
+    // select that inner range, rather than the outer range
+    // we need to shift the cursor first, in this case,
+    let endbracket = bracketsFor(editor.document,Direction.Backward);
+    let charbefore =
+        editor.document.getText(new Range(pos.translate(0,-1),pos));
+    let range: vscode.Range;
+    if(endbracket.test(charbefore)){
+        let next = pos.translate(0,1);
+        editor.selection = new vscode.Selection(next,next);
+        await vscode.commands.executeCommand('editor.action.selectToBracket');
+        range = new vscode.Range(editor.selection.start,editor.selection.end);
+    }else{
+        await vscode.commands.executeCommand('editor.action.selectToBracket');
+        range = new vscode.Range(editor.selection.start,editor.selection.end);
+    }
+
+    return range;
+}
+
+function textLineFrom(editor: vscode.TextEditor, pos: vscode.Position,
+    range: vscode.Range){
+
+    let end = editor.document.lineAt(pos).range.end;
+    if(end.isAfter(range.end)){ end = range.end; }
+    return editor.document.getText(new Range(pos,end));
+}
+
+function noMatch(match: RegExpExecArray | null){
+    return match === null || match.index === undefined;
+}
+function isBefore(a: RegExpExecArray | null, b: RegExpExecArray | null){
+    if(a === null || a.index === undefined){
+        return false
+    }
+    return b === null || b.index === undefined || a.index < b.index;
+}
+
+function nonZeroIndex(m: RegExpExecArray | null){
+    return m !== null && m.index !== undefined && m.index > 0;
+}
+
 async function moveSelByArgument(editor: vscode.TextEditor, args: MoveByArgs,
     sel: vscode.Selection) {
 
@@ -73,44 +118,24 @@ async function moveSelByArgument(editor: vscode.TextEditor, args: MoveByArgs,
     let pos = new vscode.Position(sel.active.line,sel.active.character);
     let brackets = bracketsFor(editor.document,Direction.Forward);
     let separator = /(,|;)/g;
+    let range = await findSurroundingBracketRange(editor,pos);
 
-// TODO: if we're right after a bracket, this will
-    // select that inner range, rather than the outer range
-    // we need to shift the cursor first, in this case,
-    let endbracket = bracketsFor(editor.document,Direction.Backward);
-    let charbefore =
-        editor.document.getText(new Range(pos.translate(0,-1),pos));
-    let range: vscode.Range;
-    if(endbracket.test(charbefore)){
-        let next = pos.translate(0,1)
-        editor.selection = new vscode.Selection(next,next);
-        await vscode.commands.executeCommand('editor.action.selectToBracket');
-        range = new vscode.Range(editor.selection.start,editor.selection.end);
-    }else{
-        await vscode.commands.executeCommand('editor.action.selectToBracket');
-        range = new vscode.Range(editor.selection.start,editor.selection.end);
-    }
-    // use language-sensitive brackets
     if(args.value > 0){
         let count = 0;
-
-        let end = editor.document.lineAt(pos).range.end;
-        if(end.isAfter(range.end)){ end = range.end; }
-        let text = editor.document.getText(new Range(pos,end));
+        let text = textLineFrom(editor,pos,range);
 
         let firstBracket = brackets.exec(text);
         let firstSeparator = separator.exec(text);
         let offset = pos.character;
 
+        // TODO: in progress cleanup below with functions
+        // I don't like my current approach of this tiny functions
+        // re-checking null, do something else
         while(count < args.value && pos.isBefore(range.end.translate(0,-1))){
-
-            if(firstSeparator === null ||
-                firstSeparator.index === undefined){
+            if(noMatch(firstSeparator)){
                 if(pos.line < range.end.line){
                     pos = new Position(pos.line+1,0);
-                    end = editor.document.lineAt(pos).range.end;
-                    if(end.isAfter(range.end)){ end = range.end; }
-                    text = editor.document.getText(new Range(pos,end));
+                    text = textLineFrom(editor,pos,range);
                     brackets.lastIndex = 0;
                     separator.lastIndex = 0;
                     offset = pos.character;
@@ -120,10 +145,8 @@ async function moveSelByArgument(editor: vscode.TextEditor, args: MoveByArgs,
                 }else{
                     pos = range.end.translate(0,-1);
                 }
-            }else if(firstBracket === null ||
-                        firstBracket.index === undefined ||
-                        firstSeparator.index < firstBracket.index){
-                if(firstSeparator.index > 0){
+            }else if(isBefore(firstSeparator,firstBracket)){
+                if(nonZeroIndex(firstSeparator)){
                     count++;
                     pos = new Position(pos.line,offset + firstSeparator.index);
                     offset = 0;
