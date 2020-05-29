@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { Range, Position } from 'vscode';
 import { setFlagsFromString } from 'v8';
 import { Dir } from 'fs';
+import { schedulingPolicy } from 'cluster';
 
 interface IHash<T> {
     [details: string] : T;
@@ -78,10 +79,12 @@ async function findSurroundingBracketRange(editor: vscode.TextEditor,
         let next = pos.translate(0,1);
         editor.selection = new vscode.Selection(next,next);
         await vscode.commands.executeCommand('editor.action.selectToBracket');
-        range = new vscode.Range(editor.selection.start,editor.selection.end);
+        range = new vscode.Range(editor.selection.start,
+            editor.selection.end.translate(0,-1));
     }else{
         await vscode.commands.executeCommand('editor.action.selectToBracket');
-        range = new vscode.Range(editor.selection.start,editor.selection.end);
+        range = new vscode.Range(editor.selection.start,
+            editor.selection.end.translate(0,-1));
     }
 
     return range;
@@ -95,18 +98,74 @@ function textLineFrom(editor: vscode.TextEditor, pos: vscode.Position,
     return editor.document.getText(new Range(pos,end));
 }
 
-function noMatch(match: RegExpExecArray | null){
-    return match === null || match.index === undefined;
-}
-function isBefore(a: RegExpExecArray | null, b: RegExpExecArray | null){
-    if(a === null || a.index === undefined){
-        return false
+function isBefore(a: number | undefined, b: number | undefined){
+    if(a === undefined){
+        return false;
+    }else{
+        return b === undefined || a < b;
     }
-    return b === null || b.index === undefined || a.index < b.index;
 }
 
 function nonZeroIndex(m: RegExpExecArray | null){
     return m !== null && m.index !== undefined && m.index > 0;
+}
+
+function clean(match: RegExpExecArray | null){
+    if(match === null || match.index === undefined){
+        return undefined;
+    }else{
+        return match.index;
+    }
+}
+
+enum Token{
+    Separator,
+    Bracket
+}
+
+async function findMatchingBracket(editor: vscode.TextEditor, pos: vscode.Position){
+    editor.selection = new vscode.Selection(pos,pos);
+    await vscode.commands.executeCommand('editor.action.jumpToBracket');
+    return editor.selection.active;
+}
+
+function separatorsAndBrackets(document: vscode.TextDocument, range: vscode.Range, dir: Direction){
+    let tokens = _separatorsAndBrackets(document, range, dir);
+
+    if(dir === Direction.Forward){
+        return tokens;
+    }else{
+        return Array.from(tokens).reverse();
+    }
+}
+function* _separatorsAndBrackets(document: vscode.TextDocument, range: vscode.Range, dir: Direction){
+    let brackets = bracketsFor(document,dir);
+    let separator = /(,|;)/g;
+
+    let text = document.getText(range);
+    let bindex = clean(brackets.exec(text));
+    let sindex = clean(separator.exec(text));
+    while(bindex !== undefined && sindex !== undefined){
+        if(sindex === undefined){
+            yield [bindex+range.start.character, Token.Bracket];
+        }else if(bindex === undefined){
+            yield [sindex+range.start.character, Token.Separator];
+        }else if(sindex < bindex){
+            yield [sindex+range.start.character, Token.Separator];
+        }else{
+            yield [bindex+range.start.character, Token.Bracket];
+        }
+    }
+    return;
+}
+
+function rangeFrom(document: vscode.TextDocument, pos: vscode.Position){
+    let end = document.lineAt(pos).range.end;
+    return new vscode.Range(pos,end);
+}
+
+function rangeTo(document: vscode.TextDocument, pos: vscode.Position){
+    return new vscode.Range(new vscode.Position(pos.line,0),pos);
 }
 
 async function moveSelByArgument(editor: vscode.TextEditor, args: MoveByArgs,
@@ -115,80 +174,54 @@ async function moveSelByArgument(editor: vscode.TextEditor, args: MoveByArgs,
     // find range of brackets
     editor.selection = sel;
 
+    // pos: tracks the current search position, starts at the current selection
     let pos = new vscode.Position(sel.active.line,sel.active.character);
-    let brackets = bracketsFor(editor.document,Direction.Forward);
-    let separator = /(,|;)/g;
+    // range: determined the bounds of the search
     let range = await findSurroundingBracketRange(editor,pos);
 
-    if(args.value > 0){
-        let count = 0;
-        let text = textLineFrom(editor,pos,range);
+    let doc = editor.document;
 
-        let firstBracket = brackets.exec(text);
-        let firstSeparator = separator.exec(text);
-        let offset = pos.character;
+    let dir = args.value > 0 ? Direction.Forward : Direction.Backward;
+    // count: tracks how many function arguments we've passed by
+    let count = 0;
+    // line: the current range (a single line) we're searching
+    let line = args.value > 0 ? range.intersection(rangeFrom(doc,pos)) :
+        range.intersection(rangeTo(doc,pos));
+    // goal: the goal value for count
+    let goal = Math.abs(args.value);
 
-        // TODO: in progress cleanup below with functions
-        // I don't like my current approach of this tiny functions
-        // re-checking null, do something else
-        while(count < args.value && pos.isBefore(range.end.translate(0,-1))){
-            if(noMatch(firstSeparator)){
-                if(pos.line < range.end.line){
-                    pos = new Position(pos.line+1,0);
-                    text = textLineFrom(editor,pos,range);
-                    brackets.lastIndex = 0;
-                    separator.lastIndex = 0;
-                    offset = pos.character;
+    // keep going until we reach our goal or there are no more lines to search
+    while(count < goal && line !== undefined){
 
-                    firstSeparator = separator.exec(text);
-                    firstBracket = brackets.exec(text);
-                }else{
-                    pos = range.end.translate(0,-1);
-                }
-            }else if(isBefore(firstSeparator,firstBracket)){
-                if(nonZeroIndex(firstSeparator)){
-                    count++;
-                    pos = new Position(pos.line,offset + firstSeparator.index);
-                    offset = 0;
-                    firstSeparator = separator.exec(text);
-                }else{
-                    firstSeparator = separator.exec(text);
-                }
-            }else{
-                let at = new Position(pos.line,offset + firstBracket.index);
-                editor.selection = new vscode.Selection(at,at);
-                let cmdval = await vscode.commands.executeCommand('editor.action.jumpToBracket');
-                firstBracket = brackets.exec(text);
-                if(editor.selection.active.line > pos.line){
-                    pos = editor.selection.active;
-                    end = editor.document.lineAt(pos).range.end;
-                    if(end.isAfter(range.end)){ end = range.end; }
-                    text = editor.document.getText(new Range(pos,end));
-                    brackets.lastIndex = 0;
-                    separator.lastIndex = 0;
-                    offset = pos.character;
+        // startLine: line we started searching
+        let startLine = pos.line;
+        let tokens = separatorsAndBrackets(doc, line, dir);
 
-                    firstSeparator = separator.exec(text);
-                    firstBracket = brackets.exec(text);
-                }else{
-                    pos = editor.selection.active;
+        // go through the tokens...
+        for(let [index, token] of tokens){
+            // if we've moved to a new line, stop getting tokens on this line
+            if(pos.line !== startLine){ break; }
+            // if this token occurs after the search start...
+            if(args.value > 0 ? pos.character <= index : pos.character >= index){
+                if(token === Token.Separator){
+                    // if we found a new separator, move to it
+                    // and increment the count
+                    if(pos.character !== index){
+                        pos = new Position(pos.line,index);
+                        count++;
+                    }
+                }else if(token === Token.Bracket){
+                    // if it's a bracket, move to the closing bracket
+                    pos = await findMatchingBracket(editor,
+                            new Position(pos.line,index));
                 }
-                while(firstSeparator !== null &&
-                      firstSeparator.index+offset < pos.character){
-                    firstSeparator = separator.exec(text);
-                }
-                while(firstBracket !== null &&
-                      firstBracket.index+offset < pos.character){
-                    firstBracket = brackets.exec(text);
-                }
-
             }
         }
-        return new vscode.Selection(pos,pos);
-    }else{
-        return sel;
-        // TODO: reverse search order
+
+        // after finishing the current line, move to the next one
+        line = range.intersection(rangeFrom(doc, new Position(pos.line+1,0)));
     }
+    return new vscode.Selection(pos,pos);
 }
 
 async function moveByArgument(editor: vscode.TextEditor, args: MoveByArgs){
