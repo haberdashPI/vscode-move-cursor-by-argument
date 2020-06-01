@@ -1,65 +1,22 @@
-# move-cursor-by-argument README
+# Move by Arguments
 
-This is the README for your extension "move-cursor-by-argument". After writing up a brief description, we recommend including the following sections.
+This small VSCode extension leverages a syntactic structure common to many
+languages---arguments---and lets you move and select text in terms of this
+structure.
 
-## Features
+Here, a set of arguments is defined as all text within a pair of brackets: `[]`,
+`()` or `{}`, where each argument is separated by `,` or `;`.
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+Using this extension, you can move the cursor by arguments or select arguments.
+You can also select the entire set of arguments plus the preceding identifier: a
+very common form for a function call.
 
-For example if there is an image subfolder under your extension project workspace:
+## Limitations
 
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
-
-## Requirements
-
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
-
-## Extension Settings
-
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: enable/disable this extension
-* `myExtension.thing`: set to `blah` to do something
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
------------------------------------------------------------------------------------------------------------
-
-## Working with Markdown
-
-**Note:** You can author your README using Visual Studio Code.  Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux)
-* Toggle preview (`Shift+CMD+V` on macOS or `Shift+Ctrl+V` on Windows and Linux)
-* Press `Ctrl+Space` (Windows, Linux) or `Cmd+Space` (macOS) to see a list of Markdown snippets
-
-### For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+To keep things simple, this leverages only the built-in APIs for interacting
+with brackets and syntax. These are unfortunately quite limited, so this
+extension can currently fail if there are commas within a quoted expression, for
+example. It will think the comma inside the quote delimits the next argument of
+the surrounding function call falling outside the quotes. See
+[#580](https://github.com/microsoft/vscode/issues/580) for more about this
+limitation.

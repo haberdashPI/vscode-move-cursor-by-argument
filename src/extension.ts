@@ -17,7 +17,7 @@ let languageBrackets: IHash<BracketPair> = {};
 
 function findBrackets(){
     // TODO: compute brackets based on the language configuration
-    languageBrackets["default"] = {start: /(\(|\{|\[)/, stop: /(\]|\}|\))/ }
+    languageBrackets["default"] = {start: /(\(|\{|\[)/, stop: /(\]|\}|\))/ };
 }
 function bracketsFor(doc: vscode.TextDocument,dir: Direction){
     if(dir === Direction.Forward){
@@ -28,8 +28,10 @@ function bracketsFor(doc: vscode.TextDocument,dir: Direction){
 }
 
 interface MoveByArgs{
-    value: number,
-    select: boolean
+    value?: number,
+    select?: boolean
+    boundary?: string,
+    selectWhole?: boolean,
 }
 
 enum Direction{
@@ -41,7 +43,6 @@ enum Direction{
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 
-    // TODO: create a way to define regex's in settings.json
     findBrackets();
     vscode.workspace.onDidChangeConfiguration(findBrackets);
 
@@ -83,7 +84,7 @@ async function findSurroundingBracketRange(editor: vscode.TextEditor,
             editor.selection.end.translate(0,-1));
     }else{
         await vscode.commands.executeCommand('editor.action.selectToBracket');
-        range = new vscode.Range(editor.selection.start,
+        range = new vscode.Range(editor.selection.start.translate(0,1),
             editor.selection.end.translate(0,-1));
     }
 
@@ -145,15 +146,23 @@ function* _separatorsAndBrackets(document: vscode.TextDocument, range: vscode.Ra
     let text = document.getText(range);
     let bindex = clean(brackets.exec(text));
     let sindex = clean(separator.exec(text));
-    while(bindex !== undefined && sindex !== undefined){
-        if(sindex === undefined){
+    while(true){
+        if(sindex === undefined && bindex === undefined){
+            break;
+        }else if(sindex === undefined && bindex !== undefined){
             yield [bindex+range.start.character, Token.Bracket];
-        }else if(bindex === undefined){
+            bindex = clean(brackets.exec(text));
+        }else if(sindex !== undefined && bindex === undefined){
             yield [sindex+range.start.character, Token.Separator];
-        }else if(sindex < bindex){
-            yield [sindex+range.start.character, Token.Separator];
-        }else{
-            yield [bindex+range.start.character, Token.Bracket];
+            sindex = clean(separator.exec(text));
+        }else if(sindex !== undefined && bindex !== undefined){
+            if(sindex > bindex){
+                yield [bindex+range.start.character, Token.Bracket];
+                bindex = clean(brackets.exec(text));
+            } else{
+                yield [sindex+range.start.character, Token.Separator];
+                sindex = clean(separator.exec(text));
+            }
         }
     }
     return;
@@ -168,48 +177,69 @@ function rangeTo(document: vscode.TextDocument, pos: vscode.Position){
     return new vscode.Range(new vscode.Position(pos.line,0),pos);
 }
 
-async function moveSelByArgument(editor: vscode.TextEditor, args: MoveByArgs,
-    sel: vscode.Selection) {
+async function posToArgBoundary(editor: vscode.TextEditor, value: number,
+    start: vscode.Position, boundary: Boundary) {
 
     // find range of brackets
-    editor.selection = sel;
+    editor.selection = new vscode.Selection(start,start);
 
-    // pos: tracks the current search position, starts at the current selection
-    let pos = new vscode.Position(sel.active.line,sel.active.character);
+    // pos: tracks the current search position
+    let pos = new vscode.Position(start.line,start.character);
     // range: determined the bounds of the search
     let range = await findSurroundingBracketRange(editor,pos);
 
     let doc = editor.document;
 
-    let dir = args.value > 0 ? Direction.Forward : Direction.Backward;
+    let dir = value > 0 ? Direction.Forward : Direction.Backward;
     // count: tracks how many function arguments we've passed by
     let count = 0;
-    // line: the current range (a single line) we're searching
-    let line = args.value > 0 ? range.intersection(rangeFrom(doc,pos)) :
-        range.intersection(rangeTo(doc,pos));
     // goal: the goal value for count
-    let goal = Math.abs(args.value);
+    let goal = Math.abs(value);
+    // startLine: line we started searching
+    let startLine = pos.line-1;
 
     // keep going until we reach our goal or there are no more lines to search
-    while(count < goal && line !== undefined){
+    while(count < goal){
 
-        // startLine: line we started searching
-        let startLine = pos.line;
+        // get current line
+        let line;
+        if(startLine === pos.line){
+            // update position to new line, if needed
+            if(dir === Direction.Forward){
+                pos = new Position(pos.line+1,0);
+            }else{
+                pos = new Position(pos.line-1,
+                        doc.lineAt(pos.translate(-1,0)).range.end.character);
+            }
+        }
+        else{
+            startLine = pos.line;
+        }
+
+        // use the position to find the line range we want
+        if(dir === Direction.Forward){
+            line = range.intersection(rangeFrom(doc, pos));
+        }else{
+            line = range.intersection(rangeTo(doc, pos));
+        }
+        // if the new line is outside the range we're searching in
+        // we're done
+        if(line === undefined){ break; }
+
+        // go through the tokens, counting separators
         let tokens = separatorsAndBrackets(doc, line, dir);
 
-        // go through the tokens...
         for(let [index, token] of tokens){
             // if we've moved to a new line, stop getting tokens on this line
-            if(pos.line !== startLine){ break; }
+            if(pos.line !== startLine || count === goal){ break; }
             // if this token occurs after the search start...
-            if(args.value > 0 ? pos.character <= index : pos.character >= index){
+            if(dir === Direction.Forward ?
+               pos.character <= index : pos.character >= index){
                 if(token === Token.Separator){
                     // if we found a new separator, move to it
                     // and increment the count
-                    if(pos.character !== index){
-                        pos = new Position(pos.line,index);
-                        count++;
-                    }
+                    pos = new Position(pos.line,index);
+                    count++;
                 }else if(token === Token.Bracket){
                     // if it's a bracket, move to the closing bracket
                     pos = await findMatchingBracket(editor,
@@ -217,22 +247,106 @@ async function moveSelByArgument(editor: vscode.TextEditor, args: MoveByArgs,
                 }
             }
         }
-
-        // after finishing the current line, move to the next one
-        line = range.intersection(rangeFrom(doc, new Position(pos.line+1,0)));
     }
-    return new vscode.Selection(pos,pos);
+    if(count < goal){
+        if(dir === Direction.Forward){
+            pos = range.end;
+        }else{
+            pos = range.start;
+        }
+    }else if(count === goal){
+        // default motions move to end of argument,
+        // move past separator and space, if that's where we landed
+        // (we special case the end and start of the argument range)
+        if(boundary === Boundary.Start){
+            if((dir === Direction.Forward && !pos.isEqual(range.end)) ||
+               (dir === Direction.Backward && !pos.isEqual(range.start))){
+                // move past the separator and spaces
+                let word = doc.getWordRangeAtPosition(pos.translate(0,1),/\s+/);
+                if(word !== undefined){
+                    pos = word.end;
+                }else if(pos.line < range.end.line){
+                    pos = new Position(pos.line + 1,
+                        doc.lineAt(pos.translate(1,0)).firstNonWhitespaceCharacterIndex);
+                }
+            }
+        }
+    }
+    return pos;
+}
+
+enum Boundary{
+    Start,
+    End,
+    Both,
 }
 
 async function moveByArgument(editor: vscode.TextEditor, args: MoveByArgs){
     // copy current selections
+    let value = args.value === undefined ? 1 : args.value;
     let starts = editor.selections.map(sel =>
         new vscode.Selection(sel.anchor,sel.active));
-    let results: vscode.Selection[] = [];
-    for(let i=0;i<starts.length;i++){
-        results[i] = await moveSelByArgument(editor,args,starts[i]);
+    let boundary = args.boundary === undefined ?
+        (args.selectWhole ? Boundary.Both : Boundary.Start) :
+        args.boundary === 'end' ? Boundary.End :
+        args.boundary === 'both' ? Boundary.Both :
+        Boundary.Start;
+    if(!args.selectWhole){
+        let results: vscode.Position[] = [];
+        if(boundary === Boundary.Both){
+            vscode.window.showErrorMessage("Boundary value of 'both' is "+
+                "unsupported when 'selectWhole' is false.");
+        }else{
+            for(let i=0;i<starts.length;i++){
+                results[i] =
+                    await posToArgBoundary(editor,value,starts[i].active, boundary);
+                // expand motion goal if we didn't move at all
+                if(results[i].isEqual(starts[i].active)){
+                    value += Math.sign(value);
+                    results[i] =
+                        await posToArgBoundary(editor,value,starts[i].active, boundary);
+                }
+            }
+            if(args.select){
+                editor.selections = editor.selections.map((sel,i) =>
+                    new vscode.Selection(sel.anchor,results[i])
+                );
+            }else{
+                editor.selections = results.map(x => new vscode.Selection(x,x));
+            }
+        }
+    }else{
+        let newSels: vscode.Selection[] = [];
+        let startBoundary = boundary !== Boundary.Both ? boundary :
+            value > 0 ? Boundary.Start : Boundary.End;
+        let stopBoundary = boundary !== Boundary.Both ? boundary :
+            value > 0 ? Boundary.End : Boundary.Start;
+
+        for(let i=0;i<starts.length;i++){
+            let stop = await posToArgBoundary(editor,value,starts[i].active,
+                stopBoundary);
+            let start = await posToArgBoundary(editor,-Math.sign(value),
+                stop, startBoundary);
+            if(start.isEqual(stop)){
+                start = await posToArgBoundary(editor,-2*Math.sign(value),
+                    stop, startBoundary);
+            }
+
+            let pos = new vscode.Selection(start,stop);
+            if(pos.isEqual(starts[i])){
+                stop = await posToArgBoundary(editor,value+Math.sign(value),
+                    starts[i].active, stopBoundary);
+                start = await posToArgBoundary(editor,-Math.sign(value),
+                    stop, startBoundary);
+                if(start.isEqual(stop)){
+                    start = await posToArgBoundary(editor,-2*Math.sign(value),
+                        stop, startBoundary);
+                }
+            }
+            newSels[i] = new vscode.Selection(start,stop);
+        }
+        editor.selections = newSels;
     }
-    editor.selections = results;
 }
 
 // this method is called when your extension is deactivated

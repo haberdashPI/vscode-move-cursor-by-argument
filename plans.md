@@ -14,10 +14,6 @@ for argument motion:
 - get the backwards motion working
 - get selection within and around the argument working
 
-TODO: for the below I should really just combine custom word motion
-with bracket selection for this behavior
-
 for identifier + bracket motion:
-- move by word, then move by next brackets (I think I can already do this
-- move by word, move to brackets, select brackets, go back and add first
-  identifier before the brackets
+- move by word (built-in), then move by next brackets
+- if no next brackets, then select in bracket range, then extend by word before
