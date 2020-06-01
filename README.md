@@ -15,8 +15,16 @@ very common form for a function call.
 
 To keep things simple, this leverages only the built-in APIs for interacting
 with brackets and syntax. These are unfortunately quite limited, so this
-extension can currently fail if there are commas within a quoted expression, for
-example. It will think the comma inside the quote delimits the next argument of
-the surrounding function call falling outside the quotes. See
-[#580](https://github.com/microsoft/vscode/issues/580) for more about this
-limitation.
+extension has some unfortunate drawbacks:
+
+- motion is a little slow and cursor will flash around a bunch: sending commands
+  to move around brackets must move the cursor, you can't manipulate programmatic
+  positions around brackets, so the user "sees" the computations this extension
+  performs (albeit very rapidly)
+
+- motions will stop at commas inside quotes: there is no API to determine
+  whether the current characters fall inside a quote. Making this determinition
+  would require redundant parsing of the source file.
+
+See [#580](https://github.com/microsoft/vscode/issues/580) for more about why
+these limitations exist.
