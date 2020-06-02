@@ -4,7 +4,7 @@
 	"repository": "https://github.com/haberdashPI/vscode-move-cursor-by-argument",
 	"displayName": "Move Cursor by Argument",
 	"description": "Move cursor from one function argument to the next",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"engines": {
 		"vscode": "^1.45.0"
 	},
