@@ -268,6 +268,8 @@ async function posToArgBoundary(editor: vscode.TextEditor, value: number,
                 }else if(pos.line < range.end.line){
                     pos = new Position(pos.line + 1,
                         doc.lineAt(pos.translate(1,0)).firstNonWhitespaceCharacterIndex);
+                }else{
+                    pos = pos.translate(0,1);
                 }
             }
         }

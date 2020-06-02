@@ -13,18 +13,20 @@ very common form for a function call.
 
 ## Limitations
 
-To keep things simple, this leverages only the built-in APIs for interacting
-with brackets and syntax. These are unfortunately quite limited, so this
-extension has some unfortunate drawbacks:
+While this extension is quite usable, to keep things simple, it leverages only
+the built-in APIs for interacting with brackets and syntax. This leads to some
+unfortunate drawbacks:
 
-- motion is a little slow and cursor will flash around a bunch: sending commands
-  to move around brackets must move the cursor, you can't manipulate programmatic
-  positions around brackets, so the user "sees" the computations this extension
-  performs (albeit very rapidly)
+- motion can be slow and cursor can flash around: sending commands to move
+  around brackets must move the cursor; you can't manipulate programmatic
+  positions around brackets, so the user will sometimes "see" the computations
+  this extension performs (albeit very rapidly)
 
-- motions will stop at commas inside quotes: there is no API to determine
-  whether the current characters fall inside a quote. Making this determinition
-  would require redundant parsing of the source file.
+- motions will stop at commas inside quotes: there is no built-in API to
+  determine whether the current characters fall inside a quote.
 
-See [#580](https://github.com/microsoft/vscode/issues/580) for more about why
-these limitations exist.
+Ideally there would be a way to leverage the parsing VSCode already performs
+for syntax highlighting. However, this is not possible (see
+[#580](https://github.com/microsoft/vscode/issues/580)). The alternative, which
+would be to parse the entire source file redundantly within each extension, is
+not a sustainable approach for multiple, small extensions to take.
