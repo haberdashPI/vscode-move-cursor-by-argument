@@ -310,7 +310,7 @@ async function moveByArgument(editor: vscode.TextEditor, args: MoveByArgs){
                 }
             }
             if(args.select){
-                editor.selections = editor.selections.map((sel,i) =>
+                editor.selections = starts.map((sel,i) =>
                     new vscode.Selection(sel.anchor,results[i])
                 );
             }else{
