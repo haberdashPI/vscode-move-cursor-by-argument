@@ -26,7 +26,7 @@ unfortunate drawbacks:
   determine whether the current character falls inside a quote.
 
 Ideally there would be a way to leverage the parsing VSCode already performs
-for syntax highlighting. However, this is not possible (see
+for syntax highlighting using a bulit-in API. However, this is not possible (see
 [#580](https://github.com/microsoft/vscode/issues/580)). The alternative, which
 would be to parse the entire source file redundantly within each extension, is
 not a sustainable approach for multiple, small extensions to take.
