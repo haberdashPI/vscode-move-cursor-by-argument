@@ -4,7 +4,7 @@
 	"repository": "https://github.com/haberdashPI/vscode-move-cursor-by-argument",
 	"displayName": "Move Cursor by Argument",
 	"description": "Move cursor from one function argument to the next",
-	"version": "0.0.3",
+	"version": "0.0.4",
 	"engines": {
 		"vscode": "^1.45.0"
 	},
@@ -12,7 +12,7 @@
 		"Other"
 	],
 	"activationEvents": [
-        "onCommand:move-cursor-by-argument.move-by-argument"
+		"onCommand:move-cursor-by-argument.move-by-argument"
 	],
 	"main": "./out/extension.js",
 	"contributes": {
@@ -32,13 +32,13 @@
 		"test": "node ./out/test/runTest.js"
 	},
 	"devDependencies": {
-		"@types/vscode": "^1.45.0",
 		"@types/glob": "^7.1.1",
 		"@types/mocha": "^7.0.2",
 		"@types/node": "^13.11.0",
-		"eslint": "^6.8.0",
-		"@typescript-eslint/parser": "^2.26.0",
+		"@types/vscode": "^1.45.0",
 		"@typescript-eslint/eslint-plugin": "^2.26.0",
+		"@typescript-eslint/parser": "^2.26.0",
+		"eslint": "^6.8.0",
 		"glob": "^7.1.6",
 		"mocha": "^7.1.1",
 		"typescript": "^3.8.3",
