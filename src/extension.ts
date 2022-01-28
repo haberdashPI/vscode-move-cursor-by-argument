@@ -2,9 +2,6 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import { Range, Position } from 'vscode';
-import { setFlagsFromString } from 'v8';
-import { Dir } from 'fs';
-import { schedulingPolicy } from 'cluster';
 
 interface IHash<T> {
     [details: string] : T;

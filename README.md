@@ -8,8 +8,21 @@ Here, a set of arguments is defined as all text within a pair of brackets: `[]`,
 `()` or `{}`, where each argument is separated by `,` or `;`.
 
 Using this extension, you can move the cursor by arguments or select arguments.
-You can also select the entire set of arguments plus the preceding identifier: a
-very common form for a function call.
+
+## Command
+
+There is a single command `move-cursor-by-argument.move-by-argument` which takes several arguments.
+
+```typescript
+{
+    value?: number, // the number of arguments to move by to the left (negative) or right (positive).
+    select?: boolean // whether to select or just move the cusor
+    boundary?: string, // whether to include the boundary char (, or ;)
+    selectWhole?: boolean, // whether to move both start and end selections to surround the current argument (rather than just extending one end of the selection)
+}
+```
+
+To make use of the extension, you should ddefine a keybinding for this command in your keybindings.json file.
 
 ## Limitations
 
